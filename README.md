@@ -98,6 +98,7 @@ transversales, priorizando los que coinciden con los objetivos que marcó la emp
 
 `docs/esquema-encuesta.md` documenta todas las preguntas, opciones, puntajes, pesos, casos y cursos.
 Se genera desde el código con `npm run esquema`; vuelva a generarlo después de cambiar el contenido.
+La versión en PDF (`docs/esquema-encuesta.pdf`) se genera con `npm run esquema:pdf` (requiere Playwright con Chromium).
 
 ## Cómo personalizar
 

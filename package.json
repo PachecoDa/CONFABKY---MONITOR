@@ -10,7 +10,8 @@
     "test": "node --test test/*.test.js",
     "demo": "node scripts/demo.js",
     "tablet": "node scripts/construir-tablet.mjs",
-    "esquema": "node scripts/esquema.mjs"
+    "esquema": "node scripts/esquema.mjs",
+    "esquema:pdf": "node scripts/esquema.mjs && node scripts/esquema-pdf.mjs"
   },
   "engines": {
     "node": ">=18"
@@ -19,6 +20,7 @@
     "express": "^5.1.0"
   },
   "devDependencies": {
-    "esbuild": "^0.24.2"
+    "esbuild": "^0.24.2",
+    "marked": "^14.1.4"
   }
 }
