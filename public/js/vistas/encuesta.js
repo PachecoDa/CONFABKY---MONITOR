@@ -2,7 +2,8 @@
 // insertan según la industria y la actividad elegidas. El avance se guarda
 // como borrador en el navegador para poder retomarlo.
 
-import { esc, api, local, $, $$ } from '../util.js';
+import { esc, local, $, $$ } from '../util.js';
+import { guardarEncuesta } from '../datos.js';
 import { construirFlujo, INDUSTRIAS, industriaPorId, ESLABONES, SECCIONES } from '../motor/contenido.js';
 
 const CLAVE = 'radar:borrador';
@@ -257,7 +258,7 @@ export function vistaEncuesta(app, query = '') {
     app.innerHTML = `<div class="cargando"><div class="giro"></div><div><h2>Analizando respuestas…</h2><p>Calculando el nivel de riesgo y preparando los casos para ${esc(estado.respuestas.contacto?.empresa)}.</p></div></div>`;
     try {
       const [registro] = await Promise.all([
-        api('/api/encuestas', { method: 'POST', body: { respuestas: estado.respuestas, modo: estado.modo } }),
+        guardarEncuesta(estado.respuestas, estado.modo),
         new Promise((r) => setTimeout(r, 900))
       ]);
       local.borrar(CLAVE);

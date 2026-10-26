@@ -1,30 +1,40 @@
 // Panel del consultor: todas las encuestas guardadas, distribución por nivel
 // e industria, filtros, interés en cursos y exportación a CSV.
 
-import { esc, api, numero, fecha, sesion, $, $$ } from '../util.js';
+import { esc, numero, fecha, $ } from '../util.js';
+import {
+  listarEncuestas, eliminarEncuesta, verificarClavePanel, panelConClave, puedeAdministrar,
+  origenDatos, clavePanel, descargarArchivo
+} from '../datos.js';
 import { INDUSTRIAS, industriaPorId, actividadPorId, DIMENSIONES } from '../motor/contenido.js';
 import { NIVELES } from '../motor/evaluacion.js';
 import { CURSOS } from '../motor/cursos.js';
 import { barras } from '../graficos.js';
 
-const CLAVE = 'radar:panel';
 const COLOR_NIVEL = { alto: 'var(--alto)', moderado: 'var(--moderado)', bajo: 'var(--bajo)' };
-
-function conClave(opciones = {}) {
-  return { ...opciones, headers: { 'x-panel-clave': sesion.leer(CLAVE) || '' } };
-}
+const ORIGEN = {
+  servidor: '',
+  nube: 'Encuestas guardadas en la base de datos de esta página.',
+  navegador: 'Encuestas guardadas solo en este dispositivo.'
+};
 
 export async function vistaPanel(app) {
-  if (!sesion.leer(CLAVE)) return login(app);
+  if (panelConClave && !clavePanel.leer()) return login(app);
   app.innerHTML = '<div class="cargando"><div class="giro"></div><p>Cargando encuestas…</p></div>';
+  if (!(await puedeAdministrar())) {
+    app.innerHTML = `<div class="contenedor"><div class="tarjeta login"><div class="etiqueta">Acceso restringido</div>
+      <h2>Panel del consultor</h2><p style="color:var(--tinta-2)">Solo el dueño de esta página puede ver las encuestas.</p>
+      <a class="btn btn-primario" href="#/encuesta">Hacer un diagnóstico</a></div></div>`;
+    return;
+  }
   let registros;
   try {
-    registros = await api('/api/panel/encuestas', conClave());
+    registros = await listarEncuestas();
   } catch (e) {
-    if (e.status === 401) { sesion.borrar(CLAVE); return login(app, 'La clave no es válida.'); }
+    if (e.status === 401) { clavePanel.borrar(); return login(app, 'La clave no es válida.'); }
     throw e;
   }
-  pintar(app, registros);
+  pintar(app, registros, ORIGEN[await origenDatos()]);
 }
 
 function login(app, error = '') {
@@ -44,29 +54,29 @@ function login(app, error = '') {
   $('#clave', app).focus();
   $('#form-login', app).addEventListener('submit', async (e) => {
     e.preventDefault();
-    sesion.escribir(CLAVE, $('#clave', app).value);
+    clavePanel.guardar($('#clave', app).value);
     try {
-      await api('/api/panel/verificar', conClave());
+      await verificarClavePanel();
       vistaPanel(app);
     } catch {
-      sesion.borrar(CLAVE);
+      clavePanel.borrar();
       login(app, 'La clave no es válida.');
     }
   });
 }
 
-function pintar(app, registros) {
+function pintar(app, registros, notaOrigen = '') {
   const filtro = { texto: '', nivel: '', industria: '', modo: '' };
 
   app.innerHTML = `
     <div class="panel">
       <div class="contenedor">
         <div class="panel-cab">
-          <div><div class="etiqueta">Panel del consultor</div><h1>Estudio de mercado</h1></div>
+          <div><div class="etiqueta">Panel del consultor</div><h1>Estudio de mercado</h1>${notaOrigen ? `<p class="nota-origen">${esc(notaOrigen)}</p>` : ''}</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <a class="btn btn-primario btn-sm" href="#/encuesta?modo=consultor">+ Nueva encuesta</a>
             <button class="btn btn-borde btn-sm" id="csv">Exportar CSV</button>
-            <button class="btn btn-texto btn-sm" id="salir">Salir</button>
+            ${panelConClave ? '<button class="btn btn-texto btn-sm" id="salir">Salir</button>' : ''}
           </div>
         </div>
         <div class="filtros">
@@ -88,6 +98,7 @@ function pintar(app, registros) {
         <div id="resumen"></div>
         <section class="tarjeta bloque">
           <div class="bloque-titulo"><div><h2 style="font-size:1.25rem">Encuestas</h2></div><span id="conteo" style="color:var(--tinta-3);font-size:.9rem"></span></div>
+          <div class="error-msg" id="panel-msg" role="status"></div>
           <div class="tabla-wrap" id="tabla"></div>
         </section>
       </div>
@@ -116,16 +127,38 @@ function pintar(app, registros) {
   $('#f-nivel', app).addEventListener('change', (e) => { filtro.nivel = e.target.value; actualizar(); });
   $('#f-industria', app).addEventListener('change', (e) => { filtro.industria = e.target.value; actualizar(); });
   $('#f-modo', app).addEventListener('change', (e) => { filtro.modo = e.target.value; actualizar(); });
-  $('#salir', app).addEventListener('click', () => { sesion.borrar(CLAVE); vistaPanel(app); });
-  $('#csv', app).addEventListener('click', () => exportarCsv(filtrados()));
+  $('#salir', app)?.addEventListener('click', () => { clavePanel.borrar(); vistaPanel(app); });
+  $('#csv', app).addEventListener('click', async () => {
+    try {
+      await exportarCsv(filtrados());
+    } catch (err) {
+      $('#panel-msg', app).textContent = `No se pudo exportar: ${err.message}`;
+    }
+  });
+  // Eliminar pide confirmación en la misma fila (los diálogos del navegador
+  // no funcionan dentro de claude.ai).
   $('#tabla', app).addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-borrar]');
     if (!btn) return;
-    const reg = registros.find((x) => x.id === btn.dataset.borrar);
-    if (!confirm(`¿Eliminar la encuesta de «${reg.respuestas.contacto.empresa}»? Esta acción no se puede deshacer.`)) return;
-    await api(`/api/panel/encuestas/${reg.id}`, conClave({ method: 'DELETE' }));
-    registros = registros.filter((x) => x.id !== reg.id);
-    actualizar();
+    if (btn.dataset.confirmar !== 'si') {
+      btn.dataset.confirmar = 'si';
+      btn.textContent = '¿Eliminar?';
+      btn.classList.add('confirmando');
+      setTimeout(() => {
+        if (!btn.isConnected) return;
+        btn.dataset.confirmar = '';
+        btn.textContent = '✕';
+        btn.classList.remove('confirmando');
+      }, 4000);
+      return;
+    }
+    try {
+      await eliminarEncuesta(btn.dataset.borrar);
+      registros = registros.filter((x) => x.id !== btn.dataset.borrar);
+      actualizar();
+    } catch (err) {
+      $('#panel-msg', app).textContent = `No se pudo eliminar: ${err.message}`;
+    }
   });
 
   actualizar();
@@ -207,7 +240,7 @@ function pintarTabla(cont, lista) {
             <td class="num">${reg.resultado.indice}</td>
             <td><span class="nivel nivel-${nv.id}" data-icono="${nv.icono}">${nv.nombre.replace('Riesgo ', '')}</span></td>
             <td>${reg.interes?.length || '–'}</td>
-            <td><div class="acc"><a class="btn btn-borde btn-sm" href="#/resultado/${reg.id}">Ver</a><button class="btn btn-peligro" data-borrar="${reg.id}" aria-label="Eliminar">✕</button></div></td>
+            <td><div class="acc"><a class="btn btn-borde btn-sm" href="#/resultado/${reg.id}">Ver</a><button class="btn btn-peligro" data-borrar="${reg.id}" aria-label="Eliminar la encuesta de ${esc(r.contacto.empresa)}">✕</button></div></td>
           </tr>`;
         }).join('')}
       </tbody>
@@ -232,10 +265,6 @@ function exportarCsv(lista) {
       ...dims.map((d) => reg.resultado.dimensiones[d] ?? ''), (r.objetivos || []).join(' | '), (reg.interes || []).join(' | ')
     ].map(celda).join(',');
   });
-  const blob = new Blob(['﻿' + [cab.join(','), ...filas].join('\n')], { type: 'text/csv;charset=utf-8' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `encuestas-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  const contenido = '\ufeff' + [cab.join(','), ...filas].join('\n');
+  return descargarArchivo(`encuestas-${new Date().toISOString().slice(0, 10)}.csv`, contenido, 'text/csv;charset=utf-8');
 }

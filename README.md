@@ -41,6 +41,24 @@ Variables de entorno:
 | `PANEL_CLAVE` | Clave para entrar al panel del consultor         | `externado` (¡cámbiela!) |
 | `DATA_FILE`   | Archivo donde se guardan las encuestas           | `data/encuestas.json`    |
 
+## Versión para tablet (sin servidor)
+
+```bash
+npm run tablet       # genera dist/radar-ia-tablet.html
+```
+
+Empaqueta toda la aplicación en un solo archivo HTML que se publica como página
+de claude.ai y se abre desde cualquier navegador (tablet, celular o PC) iniciando
+sesión con la misma cuenta. En esa versión:
+
+- Las encuestas se guardan en la base de datos de la página (si no está disponible,
+  se guardan en el navegador del dispositivo y el panel lo indica).
+- El panel del consultor no pide clave: solo el dueño de la página puede verlo.
+- No hay botones de PDF ni de copiar enlace, y el CSV se descarga con confirmación.
+
+El código es el mismo: `public/js/datos.js` decide si habla con el servidor o con la
+base de datos de la página.
+
 ## Rutas de la aplicación
 
 | Ruta                 | Vista                                                      |

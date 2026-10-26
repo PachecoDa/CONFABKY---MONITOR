@@ -1,7 +1,8 @@
 // Diagnóstico de una empresa: clasificación, perfil, tablero con datos
 // sintéticos, casos hipotéticos, ruta de intervención y cursos.
 
-import { esc, api, numero, millones, fecha, $, $$ } from '../util.js';
+import { esc, numero, millones, fecha, $, $$ } from '../util.js';
+import { obtenerEncuesta, registrarInteres, enArtifact } from '../datos.js';
 import { CONFIG } from '../config.js';
 import { industriaPorId, actividadPorId, plantilla, DIMENSIONES, ESLABONES, PREGUNTAS_PERFIL } from '../motor/contenido.js';
 import { NIVELES, UMBRALES } from '../motor/evaluacion.js';
@@ -22,7 +23,7 @@ export async function vistaResultado(app, id) {
   app.innerHTML = '<div class="cargando"><div class="giro"></div><p>Cargando diagnóstico…</p></div>';
   let reg;
   try {
-    reg = await api(`/api/encuestas/${encodeURIComponent(id)}`);
+    reg = await obtenerEncuesta(id);
   } catch (e) {
     app.innerHTML = `<div class="contenedor angosto"><div class="tarjeta bloque" style="margin-top:40px">
       <h2>No encontramos este diagnóstico</h2><p>${esc(e.message)}</p>
@@ -56,8 +57,8 @@ export async function vistaResultado(app, id) {
           <span class="chip">${fecha(reg.creado)}</span>
         </div>
         <div class="res-acciones">
-          <button class="btn btn-dorado" id="imprimir">Descargar PDF</button>
-          <button class="btn btn-claro" id="copiar">Copiar enlace</button>
+          ${enArtifact ? '' : `<button class="btn btn-dorado" id="imprimir">Descargar PDF</button>
+          <button class="btn btn-claro" id="copiar">Copiar enlace</button>`}
           <a class="btn btn-claro" href="#/encuesta">Nuevo diagnóstico</a>
         </div>
       </div>
@@ -180,7 +181,9 @@ export async function vistaResultado(app, id) {
         <div class="etiqueta" style="color:var(--dorado-300)">Siguiente paso</div>
         <h2>Convirtamos este diagnóstico en resultados</h2>
         <p>${esc(CONFIG.contacto.texto)}</p>
-        ${CONFIG.contacto.correo ? `<a class="btn btn-dorado" href="mailto:${esc(CONFIG.contacto.correo)}?subject=${encodeURIComponent('Diagnóstico de datos e IA: ' + empresa)}">Agendar sesión</a>` : ''}
+        ${CONFIG.contacto.correo ? (enArtifact
+          ? `<p class="correo-contacto">Escríbanos a <strong>${esc(CONFIG.contacto.correo)}</strong></p>`
+          : `<a class="btn btn-dorado" href="mailto:${esc(CONFIG.contacto.correo)}?subject=${encodeURIComponent('Diagnóstico de datos e IA: ' + empresa)}">Agendar sesión</a>`) : ''}
       </section>
     </div>`;
 
@@ -264,8 +267,8 @@ export async function vistaResultado(app, id) {
   }
 
   // Acciones
-  $('#imprimir', app).addEventListener('click', () => window.print());
-  $('#copiar', app).addEventListener('click', async (e) => {
+  $('#imprimir', app)?.addEventListener('click', () => window.print());
+  $('#copiar', app)?.addEventListener('click', async (e) => {
     try {
       await navigator.clipboard.writeText(location.href);
       e.target.textContent = 'Enlace copiado ✓';
@@ -279,7 +282,7 @@ export async function vistaResultado(app, id) {
     const elegidos = $$('input[name="curso"]:checked', e.target).map((i) => i.value);
     if (!elegidos.length) { msg.className = 'error-msg'; msg.textContent = 'Seleccione al menos un curso.'; return; }
     try {
-      await api(`/api/encuestas/${reg.id}/interes`, { method: 'POST', body: { cursos: elegidos } });
+      await registrarInteres(reg.id, elegidos);
       msg.className = 'ok-msg';
       msg.textContent = `✓ Registramos su interés en ${elegidos.length} curso${elegidos.length > 1 ? 's' : ''}.`;
     } catch (err) {
