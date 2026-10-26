@@ -6,6 +6,7 @@ import { vistaEncuesta } from './vistas/encuesta.js';
 import { vistaResultado } from './vistas/resultado.js';
 import { vistaPanel } from './vistas/panel.js';
 import { vistaFicha } from './vistas/ficha.js';
+import { vistaCaso } from './vistas/caso.js';
 
 const app = document.getElementById('app');
 document.getElementById('marca-org').textContent = CONFIG.organizacion;
@@ -15,7 +16,8 @@ const rutas = [
   { patron: /^#\/encuesta(?:\?(.*))?$/, vista: vistaEncuesta, nombre: 'encuesta' },
   { patron: /^#\/resultado\/([\w-]+)$/, vista: vistaResultado, nombre: 'resultado' },
   { patron: /^#\/panel$/, vista: vistaPanel, nombre: 'panel' },
-  { patron: /^#\/panel\/([\w-]+)$/, vista: vistaFicha, nombre: 'panel' }
+  { patron: /^#\/panel\/([\w-]+)$/, vista: vistaFicha, nombre: 'panel' },
+  { patron: /^#\/panel\/([\w-]+)\/caso\/(\d+)$/, vista: vistaCaso, nombre: 'panel' }
 ];
 
 async function navegar() {

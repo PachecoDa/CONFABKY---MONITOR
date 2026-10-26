@@ -94,6 +94,11 @@ Los casos se eligen así: primero los de la industria, luego los del eslabón de
 actividad (producción, comercialización, logística o servicio) y después los
 transversales, priorizando los que coinciden con los objetivos que marcó la empresa.
 
+## Esquema de la encuesta
+
+`docs/esquema-encuesta.md` documenta todas las preguntas, opciones, puntajes, pesos, casos y cursos.
+Se genera desde el código con `npm run esquema`; vuelva a generarlo después de cambiar el contenido.
+
 ## Cómo personalizar
 
 Todo el contenido está en `public/js/motor/` y se puede editar sin tocar el resto:

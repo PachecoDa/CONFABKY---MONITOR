@@ -99,7 +99,7 @@ export async function vistaFicha(app, id) {
           <section class="tarjeta bloque">
             <div class="etiqueta">Para la conversación</div>
             <h2>Casos priorizados</h2>
-            <p class="ficha-ayuda">Ordenados por pertinencia para su industria, su actividad y sus objetivos. Toque un caso para ver la solución.</p>
+            <p class="ficha-ayuda">Ordenados por pertinencia para su industria, su actividad y sus objetivos. Toque un caso para ver la solución, o ábralo completo para mostrárselo al cliente con sus escenarios.</p>
             <div class="acordeon">
               ${casos.map((caso, i) => {
                 const k = seriesKpi(caso.kpi, `${reg.id}:${caso.id}`);
@@ -120,6 +120,7 @@ export async function vistaFicha(app, id) {
                       <strong>${fmt(k.actual)}</strong><span aria-hidden="true">→</span>
                       <strong class="fav">${fmt(k.conIntervencion)}</strong><span class="kpi-nota">con intervención · ${fmt(k.sinIntervencion)} sin ella</span>
                     </div>
+                    <a class="btn btn-primario btn-sm abrir-caso" href="#/panel/${reg.id}/caso/${i + 1}">Abrir caso completo →</a>
                   </div>
                 </details>`;
               }).join('')}

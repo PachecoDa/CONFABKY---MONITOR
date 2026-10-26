@@ -75,11 +75,13 @@ function tablaDatos(etiquetas, series, formato, titulo) {
 
 /**
  * Gráfico de líneas.
- * opts: { etiquetas, series: [{ nombre, valores, color, punteada }], formato,
- *         inicioProyeccion, alto, compacto, titulo }
+ * opts: { etiquetas, series: [{ nombre, valores, color, punteada, atenuada, grosor }],
+ *         formato, inicioProyeccion, alto, compacto, titulo,
+ *         escalaFija: valores que fijan el eje Y (para comparar escenarios sin que salte),
+ *         marcador: índice que se resalta con una línea vertical y su valor }
  */
 export function lineas(contenedor, opts) {
-  const { etiquetas, series, formato = String, inicioProyeccion = null, alto = 300, compacto = false, titulo = '' } = opts;
+  const { etiquetas, series, formato = String, inicioProyeccion = null, alto = 300, compacto = false, titulo = '', escalaFija = null, marcador = null } = opts;
   contenedor.replaceChildren();
   if (series.length > 1) contenedor.append(leyenda(series));
   const marco = document.createElement('div');
@@ -91,7 +93,7 @@ export function lineas(contenedor, opts) {
   contenedor.append(marco);
   if (!compacto) contenedor.append(tablaDatos(etiquetas, series, formato, titulo));
 
-  const valores = series.flatMap((s) => s.valores).filter((v) => v != null);
+  const valores = (escalaFija || series.flatMap((s) => s.valores)).filter((v) => v != null);
   const minV = Math.min(...valores);
   const maxV = Math.max(...valores);
   const holgura = (maxV - minV) * 0.08 || Math.abs(maxV) * 0.1 || 1;
@@ -148,12 +150,13 @@ export function lineas(contenedor, opts) {
         abierto = true;
       });
       svg.append(svgEl('path', {
-        d, fill: 'none', stroke: s.color, 'stroke-width': 2.25, 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
-        ...(s.punteada ? { 'stroke-dasharray': '6 5' } : {})
+        d, fill: 'none', stroke: s.color, 'stroke-width': s.grosor || 2.25, 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+        ...(s.punteada ? { 'stroke-dasharray': '6 5' } : {}),
+        ...(s.atenuada ? { 'stroke-opacity': 0.35 } : {})
       }));
       const ult = s.valores.reduce((acc, v, i) => (v != null ? i : acc), -1);
       if (ult >= 0) {
-        svg.append(svgEl('circle', { cx: x(ult), cy: y(s.valores[ult]), r: 4, fill: s.color, stroke: 'var(--superficie)', 'stroke-width': 2 }));
+        svg.append(svgEl('circle', { cx: x(ult), cy: y(s.valores[ult]), r: 4, fill: s.color, stroke: 'var(--superficie)', 'stroke-width': 2, ...(s.atenuada ? { 'fill-opacity': 0.35 } : {}) }));
         // Solo se rotulan las series que llegan al borde derecho.
         if (ult === etiquetas.length - 1) etiquetasFin.push({ s, yv: y(s.valores[ult]), xv: x(ult) });
       }
@@ -168,6 +171,19 @@ export function lineas(contenedor, opts) {
       for (const e of etiquetasFin) {
         const tx = svgEl('text', { class: 'etq-directa', x: e.xv + 10, y: e.yv + 4 });
         tx.textContent = e.s.corto || e.s.nombre;
+        svg.append(tx);
+      }
+    }
+
+    if (marcador != null) {
+      const xm = x(marcador);
+      svg.append(svgEl('line', { class: 'marcador', x1: xm, x2: xm, y1: m.t - 6, y2: m.t + h }));
+      for (const s of series) {
+        const v = s.valores[marcador];
+        if (v == null || s.atenuada) continue;
+        svg.append(svgEl('circle', { cx: xm, cy: y(v), r: 7, fill: s.color, stroke: 'var(--superficie)', 'stroke-width': 3 }));
+        const tx = svgEl('text', { class: 'marcador-txt', x: xm + (xm > m.l + w * 0.75 ? -12 : 12), y: y(v) - 12, 'text-anchor': xm > m.l + w * 0.75 ? 'end' : 'start' });
+        tx.textContent = formato(v);
         svg.append(tx);
       }
     }
