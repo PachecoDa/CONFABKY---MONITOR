@@ -51,39 +51,50 @@ export function vistaEncuesta(app, query = '') {
     const restantes = total - estado.pos;
     const minutos = Math.max(1, Math.round((restantes * SEGUNDOS_POR_PREGUNTA) / 60));
 
+    const r = estado.respuestas;
+    const ind = industriaPorId(r.industria);
+    const act = ind?.actividades.find((a) => a.id === r.actividad);
+    const dos = (n) => String(n).padStart(2, '0');
+
     app.innerHTML = `
       <div class="encuesta">
-        <div class="contenedor angosto">
-          <div class="enc-cabecera">
-            <div class="enc-secciones" aria-label="Secciones">
-              ${SECCIONES.map((s, i) => `<span class="${i < seccionActual ? 'hecha' : i === seccionActual ? 'actual' : ''}">${s}</span>`).join('')}
+        <div class="contenedor enc-layout">
+          <div class="enc-principal">
+            <div class="enc-pasos">
+              <div class="enc-paso-txt">Paso ${seccionActual + 1} de ${SECCIONES.length} · ${esc(p.seccion)}</div>
+              <ol class="enc-barras" aria-label="Secciones de la encuesta">
+                ${SECCIONES.map((s, i) => `<li class="${i < seccionActual ? 'hecha' : i === seccionActual ? 'actual' : ''}"${i === seccionActual ? ' aria-current="step"' : ''}><i></i><span>${s}</span></li>`).join('')}
+              </ol>
             </div>
+            <form class="pregunta" id="form-pregunta" novalidate>
+              <div class="enc-contador" role="progressbar" aria-valuemin="1" aria-valuemax="${total}" aria-valuenow="${estado.pos + 1}"><b>${dos(estado.pos + 1)}</b> / ${dos(total)}</div>
+              <h2 id="titulo-pregunta" class="enc-titulo">${esc(p.titulo)}</h2>
+              ${p.ayuda ? `<p class="ayuda">${esc(p.ayuda)}</p>` : ''}
+              ${estado.modo === 'consultor' && p.nota ? `<div class="nota-consultor"><strong>Consultor</strong><span>${esc(p.nota)}</span></div>` : ''}
+              <div id="cuerpo">${cuerpo(p)}</div>
+              <div class="error-msg" id="error" role="alert"></div>
+              <div class="enc-pie">
+                <button type="button" class="btn btn-contorno" id="atras" ${estado.pos === 0 ? 'disabled' : ''}>← Volver</button>
+                <span class="atajo">${p.opciones ? 'Teclas A, B, C… o Enter' : ''}</span>
+                <button type="submit" class="btn btn-primario" id="siguiente" ${respondida(p) ? '' : 'disabled'}>
+                  ${ultima ? 'Generar diagnóstico ✓' : 'Continuar →'}
+                </button>
+              </div>
+            </form>
+          </div>
+          <aside class="enc-resumen" aria-label="Resumen">
+            <div class="etiqueta">Resumen</div>
+            <dl>
+              <div class="${r.contacto?.empresa ? 'lleno' : ''}"><dt>Empresa</dt><dd id="res-empresa">${esc(r.contacto?.empresa || 'Pendiente')}</dd></div>
+              <div class="${ind ? 'lleno' : ''}"><dt>Industria</dt><dd>${ind ? esc(ind.nombre) : 'Pendiente'}</dd></div>
+              <div class="${act ? 'lleno' : ''}"><dt>Actividad</dt><dd>${act ? esc(act.nombre) : 'Pendiente'}</dd></div>
+              <div><dt>Tiempo restante</dt><dd>≈ ${minutos} min</dd></div>
+            </dl>
             <label class="interruptor" title="Muestra notas de apoyo para quien aplica la encuesta">
               <input type="checkbox" id="modo" ${estado.modo === 'consultor' ? 'checked' : ''}> Modo consultor
             </label>
-          </div>
-          <div class="progreso" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${estado.pos}">
-            <div style="width:${(estado.pos / total) * 100}%"></div>
-          </div>
-          <div class="enc-meta">
-            <span>Pregunta ${estado.pos + 1} de ${total}</span>
-            <span>≈ ${minutos} min restante${minutos === 1 ? '' : 's'}</span>
-          </div>
-          <form class="tarjeta pregunta" id="form-pregunta" novalidate>
-            <div class="etiqueta">${esc(p.seccion)}</div>
-            <h2 id="titulo-pregunta">${esc(p.titulo)}</h2>
-            ${p.ayuda ? `<p class="ayuda">${esc(p.ayuda)}</p>` : '<div style="height:12px"></div>'}
-            ${estado.modo === 'consultor' && p.nota ? `<div class="nota-consultor"><strong>Consultor:</strong><span>${esc(p.nota)}</span></div>` : ''}
-            <div id="cuerpo">${cuerpo(p)}</div>
-            <div class="error-msg" id="error" role="alert"></div>
-            <div class="enc-pie">
-              <button type="button" class="btn btn-texto" id="atras" ${estado.pos === 0 ? 'disabled' : ''}>← Atrás</button>
-              <span class="atajo">${p.opciones ? 'Use las teclas A, B, C… o Enter' : ''}</span>
-              <button type="submit" class="btn btn-primario" id="siguiente" ${respondida(p) ? '' : 'disabled'}>
-                ${ultima ? 'Generar diagnóstico ✓' : 'Siguiente →'}
-              </button>
-            </div>
-          </form>
+            <p class="resumen-nota">Las preguntas cambian según la industria y la actividad. El avance se guarda en este navegador hasta generar el diagnóstico.</p>
+          </aside>
         </div>
       </div>`;
 
@@ -133,8 +144,9 @@ export function vistaEncuesta(app, query = '') {
     return `<div class="opciones" role="${multiple ? 'group' : 'radiogroup'}" aria-labelledby="titulo-pregunta">
       ${p.opciones.map((o, i) => `
         <button type="button" class="opcion ${sel.includes(o.v) ? 'sel' : ''}" role="${multiple ? 'checkbox' : 'radio'}" aria-checked="${sel.includes(o.v)}" data-v="${esc(o.v)}">
-          <span class="tecla">${LETRAS[i]}</span>
+          <span class="marca-op ${multiple ? 'cuadro' : ''}" aria-hidden="true"></span>
           <span class="txt">${esc(o.t)}${o.d ? `<small>${esc(o.d)}</small>` : ''}</span>
+          <span class="tecla" aria-hidden="true">${LETRAS[i]}</span>
         </button>`).join('')}
     </div>
     ${multiple ? `<p class="ayuda" style="margin:12px 0 0;font-size:.9rem">Seleccione hasta ${p.max}.</p>` : ''}`;
@@ -174,6 +186,9 @@ export function vistaEncuesta(app, query = '') {
         };
         persistir();
         actualizarBoton();
+        const res = $('#res-empresa', app);
+        res.textContent = estado.respuestas.contacto.empresa.trim() || 'Pendiente';
+        res.parentElement.classList.toggle('lleno', !!estado.respuestas.contacto.empresa.trim());
       };
       form.addEventListener('input', leer);
       form.addEventListener('change', leer);

@@ -14,21 +14,14 @@ export function vistaInicio(app) {
   app.innerHTML = `
     <section class="hero">
       <div class="contenedor">
-        <div>
-          <div class="etiqueta">Estudio de mercado · Inteligencia artificial y ciencia de datos</div>
-          <h1>¿Qué tan preparada está su empresa para la <em>inteligencia artificial</em>?</h1>
-          <p class="lead">Responda un diagnóstico de 5 minutos con preguntas específicas para su industria y su actividad. Al terminar verá su nivel de riesgo, un tablero con escenarios para su empresa, seis casos priorizados y la ruta de formación recomendada.</p>
-          <div class="acciones">
-            <a class="btn btn-dorado" href="#/encuesta">Iniciar diagnóstico →</a>
-            <a class="btn btn-claro" href="#/encuesta?modo=consultor">Modo consultor (acompañado)</a>
-          </div>
-          <div class="hero-datos">
-            <div><strong>≈ 5 min</strong>21 preguntas</div>
-            <div><strong>10</strong>industrias y 40 nichos</div>
-            <div><strong>3</strong>niveles de riesgo</div>
-          </div>
+        <span class="insignia"><i></i>Diagnóstico empresarial con datos e IA</span>
+        <h1>¿Qué tan lista está su empresa para la <em>IA</em>?</h1>
+        <p class="lead">Responda un diagnóstico de 5 minutos con preguntas propias de su industria y su actividad. Al terminar verá su nivel de riesgo, un tablero con escenarios para su empresa, seis casos priorizados y la ruta de formación recomendada.</p>
+        <div class="acciones">
+          <a class="btn btn-dorado" href="#/encuesta">Comenzar diagnóstico →</a>
+          <a class="btn btn-claro" href="#/encuesta?modo=consultor">Modo consultor</a>
         </div>
-        ${radarSvg()}
+        <div class="hero-meta"><span>◷ 21 preguntas</span><span>·</span><span>10 industrias y 40 nichos</span><span>·</span><span>3 niveles de riesgo</span></div>
       </div>
     </section>
     ${empresaBorrador ? `
@@ -59,7 +52,7 @@ export function vistaInicio(app) {
         </div>
       </div>
     </section>
-    <section class="seccion" style="background:var(--superficie);border-top:1px solid var(--borde);border-bottom:1px solid var(--borde)">
+    <section class="seccion banda">
       <div class="contenedor">
         <div class="seccion-titulo">
           <div class="etiqueta">Cómo funciona</div>
@@ -80,26 +73,3 @@ export function vistaInicio(app) {
   });
 }
 
-function radarSvg() {
-  const anillos = [170, 120, 70].map((r) => `<circle cx="200" cy="200" r="${r}" fill="none" stroke="rgb(255 255 255 / 16%)" stroke-width="1.5"/>`).join('');
-  const puntos = [
-    [120, 140, '#d9534f'], [270, 120, '#e6a817'], [250, 270, '#3fbf6f'], [150, 280, '#e6a817'], [300, 210, '#3fbf6f'], [95, 230, '#d9534f']
-  ].map(([x, y, c]) => `<circle cx="${x}" cy="${y}" r="7" fill="${c}" stroke="#0a3b2b" stroke-width="3"/>`).join('');
-  return `
-    <div class="radar-visual" aria-hidden="true">
-      <svg viewBox="0 0 400 400">
-        <defs>
-          <radialGradient id="g-barrido" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(200 200) scale(170)">
-            <stop offset="0" stop-color="#c8a24a" stop-opacity=".55"/><stop offset="1" stop-color="#c8a24a" stop-opacity="0"/>
-          </radialGradient>
-        </defs>
-        <circle cx="200" cy="200" r="170" fill="rgb(255 255 255 / 4%)"/>
-        ${anillos}
-        <line x1="30" y1="200" x2="370" y2="200" stroke="rgb(255 255 255 / 12%)"/>
-        <line x1="200" y1="30" x2="200" y2="370" stroke="rgb(255 255 255 / 12%)"/>
-        <g class="radar-barrido"><path d="M200 200 L200 30 A170 170 0 0 1 347 115 Z" fill="url(#g-barrido)"/></g>
-        ${puntos}
-        <circle cx="200" cy="200" r="6" fill="#c8a24a"/>
-      </svg>
-    </div>`;
-}
