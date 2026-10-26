@@ -1,10 +1,12 @@
-// Panel del consultor: todas las encuestas guardadas, distribución por nivel
-// e industria, filtros, interés en cursos y exportación a CSV.
+// Panel del consultor. Dos pestañas:
+//   · Clientes: la cartera en tarjetas, con búsqueda y filtros; cada tarjeta
+//     abre la ficha del cliente (vistas/ficha.js).
+//   · Estudio de mercado: indicadores agregados, tabla y exportación a CSV.
 
-import { esc, numero, fecha, $ } from '../util.js';
+import { esc, numero, fecha, $, $$ } from '../util.js';
 import {
   listarEncuestas, eliminarEncuesta, verificarClavePanel, panelConClave, puedeAdministrar,
-  origenDatos, clavePanel, descargarArchivo
+  origenDatos, clavePanel, descargarArchivo, ESTADOS
 } from '../datos.js';
 import { INDUSTRIAS, industriaPorId, actividadPorId, DIMENSIONES } from '../motor/contenido.js';
 import { NIVELES } from '../motor/evaluacion.js';
@@ -17,24 +19,59 @@ const ORIGEN = {
   nube: 'Encuestas guardadas en la base de datos de esta página.',
   navegador: 'Encuestas guardadas solo en este dispositivo.'
 };
+const RIESGO_ORDEN = { alto: 0, moderado: 1, bajo: 2 };
 
-export async function vistaPanel(app) {
-  if (panelConClave && !clavePanel.leer()) return login(app);
-  app.innerHTML = '<div class="cargando"><div class="giro"></div><p>Cargando encuestas…</p></div>';
+// Filtros y pestaña: se conservan al ir a una ficha y volver.
+const estadoVista = { pestana: 'clientes', texto: '', nivel: '', estado: '', orden: 'recientes' };
+
+// ───────────── Utilidades compartidas con la ficha ─────────────
+
+export function iniciales(nombre) {
+  const palabras = String(nombre).replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean);
+  const utiles = palabras.filter((p) => !/^(de|del|la|las|el|los|y|s\.?a\.?s?)$/i.test(p));
+  const base = utiles.length ? utiles : palabras;
+  return (base.slice(0, 2).map((p) => p[0]).join('') || '?').toUpperCase();
+}
+
+// Tono del avatar: estable por empresa, siempre dentro de la paleta verde/dorado.
+export function tonoAvatar(nombre) {
+  let h = 0;
+  for (const c of String(nombre)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return ['av-1', 'av-2', 'av-3', 'av-4', 'av-5'][h % 5];
+}
+
+export function anilloIndice(indice, nivel, tam = 56) {
+  const r = tam / 2 - 5;
+  const c = 2 * Math.PI * r;
+  return `<svg class="anillo" viewBox="0 0 ${tam} ${tam}" width="${tam}" height="${tam}" role="img" aria-label="Índice ${indice} de 100">
+    <circle class="anillo-pista" cx="${tam / 2}" cy="${tam / 2}" r="${r}" fill="none" stroke-width="5"/>
+    <circle cx="${tam / 2}" cy="${tam / 2}" r="${r}" fill="none" stroke="${COLOR_NIVEL[nivel]}" stroke-width="5" stroke-linecap="round"
+      stroke-dasharray="${(c * indice) / 100} ${c}" transform="rotate(-90 ${tam / 2} ${tam / 2})"/>
+    <text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" class="anillo-num">${indice}</text>
+  </svg>`;
+}
+
+export function estadoDe(reg) {
+  return ESTADOS.find((e) => e.v === reg.seguimiento?.estado) || ESTADOS[0];
+}
+
+// Carga las encuestas resolviendo clave y permisos. Devuelve null si ya pintó
+// otra cosa (login o acceso restringido).
+export async function cargarPanel(app) {
+  if (panelConClave && !clavePanel.leer()) { login(app); return null; }
+  app.innerHTML = '<div class="cargando"><div class="giro"></div><p>Cargando clientes…</p></div>';
   if (!(await puedeAdministrar())) {
     app.innerHTML = `<div class="contenedor"><div class="tarjeta login"><div class="etiqueta">Acceso restringido</div>
-      <h2>Panel del consultor</h2><p style="color:var(--tinta-2)">Solo el dueño de esta página puede ver las encuestas.</p>
+      <h2>Panel del consultor</h2><p style="color:var(--tinta-2)">Solo el dueño de esta página puede ver los clientes.</p>
       <a class="btn btn-primario" href="#/encuesta">Hacer un diagnóstico</a></div></div>`;
-    return;
+    return null;
   }
-  let registros;
   try {
-    registros = await listarEncuestas();
+    return await listarEncuestas();
   } catch (e) {
-    if (e.status === 401) { clavePanel.borrar(); return login(app, 'La clave no es válida.'); }
+    if (e.status === 401) { clavePanel.borrar(); login(app, 'La clave no es válida.'); return null; }
     throw e;
   }
-  pintar(app, registros, ORIGEN[await origenDatos()]);
 }
 
 function login(app, error = '') {
@@ -43,7 +80,7 @@ function login(app, error = '') {
       <div class="tarjeta login">
         <div class="etiqueta">Acceso restringido</div>
         <h2>Panel del consultor</h2>
-        <p style="color:var(--tinta-2)">Consulte todas las encuestas, su clasificación y el interés en cursos.</p>
+        <p style="color:var(--tinta-2)">Consulte sus clientes, su clasificación y el interés en cursos.</p>
         <form id="form-login">
           <div class="campo"><label for="clave">Clave del panel</label><input id="clave" type="password" autocomplete="current-password" required></div>
           <div class="error-msg" role="alert">${esc(error)}</div>
@@ -57,7 +94,7 @@ function login(app, error = '') {
     clavePanel.guardar($('#clave', app).value);
     try {
       await verificarClavePanel();
-      vistaPanel(app);
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch {
       clavePanel.borrar();
       login(app, 'La clave no es válida.');
@@ -65,72 +102,139 @@ function login(app, error = '') {
   });
 }
 
-function pintar(app, registros, notaOrigen = '') {
-  const filtro = { texto: '', nivel: '', industria: '', modo: '' };
+// ───────────── Vista principal ─────────────
+
+export async function vistaPanel(app) {
+  const registros = await cargarPanel(app);
+  if (!registros) return;
+  const notaOrigen = ORIGEN[await origenDatos()];
+  pintar(app, registros, notaOrigen);
+}
+
+function pintar(app, registros, notaOrigen) {
+  const n = registros.length;
+  const alto = registros.filter((r) => r.resultado.nivel === 'alto').length;
+  const interesados = registros.filter((r) => r.interes?.length).length;
+  const porNivel = (nv) => registros.filter((r) => r.resultado.nivel === nv).length;
 
   app.innerHTML = `
     <div class="panel">
       <div class="contenedor">
-        <div class="panel-cab">
-          <div><div class="etiqueta">Panel del consultor</div><h1>Estudio de mercado</h1>${notaOrigen ? `<p class="nota-origen">${esc(notaOrigen)}</p>` : ''}</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <a class="btn btn-primario btn-sm" href="#/encuesta?modo=consultor">+ Nueva encuesta</a>
-            <button class="btn btn-borde btn-sm" id="csv">Exportar CSV</button>
+        <header class="cartera-cab">
+          <div>
+            <div class="etiqueta">Panel del consultor</div>
+            <h1>Cartera de clientes</h1>
+            <p class="cartera-sub">${n ? `${n} empresa${n === 1 ? '' : 's'} diagnosticada${n === 1 ? '' : 's'} · ${alto} en riesgo alto · ${interesados} con interés en cursos` : 'Aún no hay empresas diagnosticadas.'}</p>
+            ${notaOrigen ? `<p class="nota-origen">${esc(notaOrigen)}</p>` : ''}
+          </div>
+          <div class="cartera-acciones">
+            <a class="btn btn-primario" href="#/encuesta?modo=consultor">+ Nuevo diagnóstico</a>
             ${panelConClave ? '<button class="btn btn-texto btn-sm" id="salir">Salir</button>' : ''}
           </div>
+        </header>
+
+        <div class="pestanas" role="tablist" aria-label="Secciones del panel">
+          <button role="tab" data-pestana="clientes" aria-selected="${estadoVista.pestana === 'clientes'}">Clientes</button>
+          <button role="tab" data-pestana="estudio" aria-selected="${estadoVista.pestana === 'estudio'}">Estudio de mercado</button>
         </div>
-        <div class="filtros">
-          <input class="control" id="f-texto" type="search" placeholder="Buscar empresa, contacto o ciudad…" aria-label="Buscar">
-          <select class="control" id="f-nivel" aria-label="Nivel">
-            <option value="">Todos los niveles</option>
-            ${['alto', 'moderado', 'bajo'].map((n) => `<option value="${n}">${NIVELES[n].nombre}</option>`).join('')}
-          </select>
-          <select class="control" id="f-industria" aria-label="Industria">
-            <option value="">Todas las industrias</option>
-            ${INDUSTRIAS.map((i) => `<option value="${i.id}">${esc(i.nombre)}</option>`).join('')}
-          </select>
-          <select class="control" id="f-modo" aria-label="Modo">
-            <option value="">Ambos modos</option>
-            <option value="consultor">Con consultor</option>
-            <option value="autoguiado">Autoguiada</option>
-          </select>
-        </div>
-        <div id="resumen"></div>
-        <section class="tarjeta bloque">
-          <div class="bloque-titulo"><div><h2 style="font-size:1.25rem">Encuestas</h2></div><span id="conteo" style="color:var(--tinta-3);font-size:.9rem"></span></div>
+
+        <section id="vista-clientes" ${estadoVista.pestana === 'clientes' ? '' : 'hidden'}>
+          <div class="cartera-filtros">
+            <input class="control buscador" id="f-texto" type="search" placeholder="Buscar por empresa, contacto o ciudad" aria-label="Buscar cliente" value="${esc(estadoVista.texto)}">
+            <div class="chips-filtro" role="group" aria-label="Nivel de riesgo">
+              <button data-nivel="" aria-pressed="${estadoVista.nivel === ''}">Todos <span>${n}</span></button>
+              ${['alto', 'moderado', 'bajo'].map((nv) => `
+                <button data-nivel="${nv}" aria-pressed="${estadoVista.nivel === nv}"><i class="punto punto-${nv}" aria-hidden="true">${NIVELES[nv].icono}</i>${NIVELES[nv].etiquetaCorta} <span>${porNivel(nv)}</span></button>`).join('')}
+            </div>
+            <div class="selectores">
+              <select class="control" id="f-estado" aria-label="Estado comercial">
+                <option value="">Todos los estados</option>
+                ${ESTADOS.map((e) => `<option value="${e.v}" ${estadoVista.estado === e.v ? 'selected' : ''}>${e.t}</option>`).join('')}
+              </select>
+              <select class="control" id="f-orden" aria-label="Ordenar">
+                <option value="recientes" ${estadoVista.orden === 'recientes' ? 'selected' : ''}>Más recientes</option>
+                <option value="riesgo" ${estadoVista.orden === 'riesgo' ? 'selected' : ''}>Mayor riesgo primero</option>
+                <option value="nombre" ${estadoVista.orden === 'nombre' ? 'selected' : ''}>Nombre (A–Z)</option>
+              </select>
+            </div>
+          </div>
+          <div class="clientes" id="clientes"></div>
+        </section>
+
+        <section id="vista-estudio" ${estadoVista.pestana === 'estudio' ? '' : 'hidden'}>
+          <div class="estudio-acciones">
+            <p>Resultados agregados de todas las encuestas: sirven para el informe del estudio de mercado.</p>
+            <button class="btn btn-borde btn-sm" id="csv">Exportar CSV</button>
+          </div>
           <div class="error-msg" id="panel-msg" role="status"></div>
-          <div class="tabla-wrap" id="tabla"></div>
+          <div id="resumen"></div>
+          <section class="tarjeta bloque">
+            <div class="bloque-titulo"><div><h2 style="font-size:1.2rem">Todas las encuestas</h2></div></div>
+            <div class="tabla-wrap" id="tabla"></div>
+          </section>
         </section>
       </div>
     </div>`;
 
-  const filtrados = () => registros.filter((reg) => {
-    const r = reg.respuestas;
-    if (filtro.nivel && reg.resultado.nivel !== filtro.nivel) return false;
-    if (filtro.industria && r.industria !== filtro.industria) return false;
-    if (filtro.modo && reg.modo !== filtro.modo) return false;
-    if (filtro.texto) {
-      const t = `${r.contacto.empresa} ${r.contacto.nombre} ${r.contacto.ciudad} ${r.contacto.correo}`.toLowerCase();
-      if (!t.includes(filtro.texto.toLowerCase())) return false;
+  function clientesFiltrados() {
+    const t = estadoVista.texto.toLowerCase();
+    const lista = registros.filter((reg) => {
+      const c = reg.respuestas.contacto;
+      if (estadoVista.nivel && reg.resultado.nivel !== estadoVista.nivel) return false;
+      if (estadoVista.estado && estadoDe(reg).v !== estadoVista.estado) return false;
+      if (t && !`${c.empresa} ${c.nombre} ${c.ciudad} ${c.correo}`.toLowerCase().includes(t)) return false;
+      return true;
+    });
+    if (estadoVista.orden === 'riesgo') {
+      lista.sort((a, b) => RIESGO_ORDEN[a.resultado.nivel] - RIESGO_ORDEN[b.resultado.nivel] || a.resultado.indice - b.resultado.indice);
+    } else if (estadoVista.orden === 'nombre') {
+      lista.sort((a, b) => a.respuestas.contacto.empresa.localeCompare(b.respuestas.contacto.empresa, 'es'));
+    } else {
+      lista.sort((a, b) => b.creado.localeCompare(a.creado));
     }
-    return true;
-  });
-
-  function actualizar() {
-    const lista = filtrados();
-    pintarResumen($('#resumen', app), lista);
-    pintarTabla($('#tabla', app), lista);
-    $('#conteo', app).textContent = `${lista.length} de ${registros.length}`;
+    return lista;
   }
 
-  $('#f-texto', app).addEventListener('input', (e) => { filtro.texto = e.target.value.trim(); actualizar(); });
-  $('#f-nivel', app).addEventListener('change', (e) => { filtro.nivel = e.target.value; actualizar(); });
-  $('#f-industria', app).addEventListener('change', (e) => { filtro.industria = e.target.value; actualizar(); });
-  $('#f-modo', app).addEventListener('change', (e) => { filtro.modo = e.target.value; actualizar(); });
+  function pintarClientes() {
+    const lista = clientesFiltrados();
+    const cont = $('#clientes', app);
+    if (!registros.length) {
+      cont.innerHTML = `<div class="vacio-cartera">
+        <h3>Su cartera está vacía</h3>
+        <p>Cada diagnóstico que haga o que un cliente responda aparecerá aquí como una tarjeta con su nivel de riesgo y su principal problema.</p>
+        <a class="btn btn-primario" href="#/encuesta?modo=consultor">Hacer el primer diagnóstico</a></div>`;
+      return;
+    }
+    if (!lista.length) {
+      cont.innerHTML = '<div class="vacio-cartera"><h3>Ningún cliente coincide</h3><p>Pruebe con otro nombre o quite algún filtro.</p></div>';
+      return;
+    }
+    cont.innerHTML = lista.map(tarjetaCliente).join('');
+  }
+
+  $('#f-texto', app).addEventListener('input', (e) => { estadoVista.texto = e.target.value.trim(); pintarClientes(); });
+  $('#f-estado', app).addEventListener('change', (e) => { estadoVista.estado = e.target.value; pintarClientes(); });
+  $('#f-orden', app).addEventListener('change', (e) => { estadoVista.orden = e.target.value; pintarClientes(); });
+  for (const b of $$('[data-nivel]', app)) {
+    b.addEventListener('click', () => {
+      estadoVista.nivel = b.dataset.nivel;
+      for (const o of $$('[data-nivel]', app)) o.setAttribute('aria-pressed', o === b);
+      pintarClientes();
+    });
+  }
+  for (const b of $$('[data-pestana]', app)) {
+    b.addEventListener('click', () => {
+      estadoVista.pestana = b.dataset.pestana;
+      for (const o of $$('[data-pestana]', app)) o.setAttribute('aria-selected', o === b);
+      $('#vista-clientes', app).hidden = estadoVista.pestana !== 'clientes';
+      $('#vista-estudio', app).hidden = estadoVista.pestana !== 'estudio';
+      if (estadoVista.pestana === 'estudio') pintarEstudio();
+    });
+  }
   $('#salir', app)?.addEventListener('click', () => { clavePanel.borrar(); vistaPanel(app); });
   $('#csv', app).addEventListener('click', async () => {
     try {
-      await exportarCsv(filtrados());
+      await exportarCsv(registros);
     } catch (err) {
       $('#panel-msg', app).textContent = `No se pudo exportar: ${err.message}`;
     }
@@ -140,29 +244,70 @@ function pintar(app, registros, notaOrigen = '') {
   $('#tabla', app).addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-borrar]');
     if (!btn) return;
-    if (btn.dataset.confirmar !== 'si') {
-      btn.dataset.confirmar = 'si';
-      btn.textContent = '¿Eliminar?';
-      btn.classList.add('confirmando');
-      setTimeout(() => {
-        if (!btn.isConnected) return;
-        btn.dataset.confirmar = '';
-        btn.textContent = '✕';
-        btn.classList.remove('confirmando');
-      }, 4000);
-      return;
-    }
+    if (!confirmarEnBoton(btn)) return;
     try {
       await eliminarEncuesta(btn.dataset.borrar);
       registros = registros.filter((x) => x.id !== btn.dataset.borrar);
-      actualizar();
+      pintar(app, registros, notaOrigen);
     } catch (err) {
       $('#panel-msg', app).textContent = `No se pudo eliminar: ${err.message}`;
     }
   });
 
-  actualizar();
+  function pintarEstudio() {
+    pintarResumen($('#resumen', app), registros);
+    pintarTabla($('#tabla', app), registros);
+  }
+
+  pintarClientes();
+  if (estadoVista.pestana === 'estudio') pintarEstudio();
 }
+
+// Primer toque: pide confirmar. Segundo toque (antes de 4 s): confirma.
+export function confirmarEnBoton(btn, texto = '¿Eliminar?') {
+  if (btn.dataset.confirmar === 'si') return true;
+  const original = btn.innerHTML;
+  btn.dataset.confirmar = 'si';
+  btn.textContent = texto;
+  btn.classList.add('confirmando');
+  setTimeout(() => {
+    if (!btn.isConnected) return;
+    btn.dataset.confirmar = '';
+    btn.innerHTML = original;
+    btn.classList.remove('confirmando');
+  }, 4000);
+  return false;
+}
+
+function tarjetaCliente(reg) {
+  const r = reg.respuestas;
+  const c = r.contacto;
+  const ind = industriaPorId(r.industria);
+  const act = actividadPorId(ind, r.actividad);
+  const nv = NIVELES[reg.resultado.nivel];
+  const est = estadoDe(reg);
+  const problema = reg.resultado.hallazgos[0]?.texto || 'Sin brechas críticas: el reto es escalar lo que ya funciona.';
+  return `
+    <a class="cliente" href="#/panel/${reg.id}">
+      <div class="cliente-cab">
+        <span class="avatar ${tonoAvatar(c.empresa)}" aria-hidden="true">${esc(iniciales(c.empresa))}</span>
+        <div class="cliente-id">
+          <h3>${esc(c.empresa)}</h3>
+          <span class="cliente-ind">${ind ? `${ind.icono} ${esc(ind.nombre)}` : ''}</span>
+          <span class="cliente-act">${act ? esc(act.nombre) : ''}</span>
+        </div>
+        ${anilloIndice(reg.resultado.indice, nv.id)}
+      </div>
+      <p class="cliente-problema"><b>Principal problema</b>${esc(problema)}</p>
+      <div class="cliente-pie">
+        <span class="nivel nivel-${nv.id}" data-icono="${nv.icono}">${nv.nombre}</span>
+        <span class="estado estado-${est.v}">${est.t}</span>
+        <span class="cliente-fecha">${esc(c.ciudad ? `${c.ciudad} · ` : '')}${fecha(reg.creado)}</span>
+      </div>
+    </a>`;
+}
+
+// ───────────── Estudio de mercado ─────────────
 
 function pintarResumen(cont, lista) {
   const n = lista.length;
@@ -174,11 +319,11 @@ function pintarResumen(cont, lista) {
 
   cont.innerHTML = `
     <div class="panel-kpis">
-      <div class="kpi destacado"><div class="lbl">Encuestas</div><div class="val">${n}</div><div class="sub">en la selección</div></div>
+      <div class="kpi destacado"><div class="lbl">Encuestas</div><div class="val">${n}</div><div class="sub">Índice promedio: ${numero(promedio)}</div></div>
       ${['alto', 'moderado', 'bajo'].map((nv) => `
         <div class="kpi"><div class="lbl"><span class="nivel nivel-${nv}" data-icono="${NIVELES[nv].icono}">${NIVELES[nv].nombre}</span></div>
         <div class="val">${porNivel[nv]}</div><div class="sub">${pct(porNivel[nv])} de las empresas</div></div>`).join('')}
-      <div class="kpi"><div class="lbl">Interesados en cursos</div><div class="val">${interesados}</div><div class="sub">Índice promedio: ${numero(promedio)}</div></div>
+      <div class="kpi"><div class="lbl">Interesados en cursos</div><div class="val">${interesados}</div><div class="sub">${pct(interesados)} de las empresas</div></div>
     </div>
     ${n ? `
     <div class="panel-graficos">
@@ -200,11 +345,7 @@ function pintarResumen(cont, lista) {
     </div>` : ''}`;
   if (!n) return;
 
-  const dims = Object.keys(DIMENSIONES).map((k) => {
-    const vals = lista.map((r) => r.resultado.dimensiones[k]).filter((v) => v != null);
-    return { etiqueta: DIMENSIONES[k].corto, valor: vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0 };
-  });
-  barras($('#g-dim', cont), dims, { max: 100 });
+  barras($('#g-dim', cont), promediosDimension(lista).map(([k, v]) => ({ etiqueta: DIMENSIONES[k].corto, valor: v })), { max: 100 });
 
   const porInd = INDUSTRIAS.map((i) => ({ etiqueta: `${i.icono} ${i.nombre}`, valor: lista.filter((r) => r.respuestas.industria === i.id).length }))
     .filter((x) => x.valor)
@@ -219,28 +360,36 @@ function pintarResumen(cont, lista) {
     : '<li style="color:var(--tinta-3)">Aún no hay solicitudes.</li>';
 }
 
+export function promediosDimension(lista) {
+  return Object.keys(DIMENSIONES).map((k) => {
+    const vals = lista.map((r) => r.resultado.dimensiones[k]).filter((v) => v != null);
+    return [k, vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0];
+  });
+}
+
 function pintarTabla(cont, lista) {
   if (!lista.length) {
-    cont.innerHTML = '<div class="vacio">No hay encuestas que coincidan. Comparta el enlace del diagnóstico o haga una en modo consultor.</div>';
+    cont.innerHTML = '<div class="vacio">Aún no hay encuestas.</div>';
     return;
   }
   cont.innerHTML = `
     <table class="tabla">
-      <thead><tr><th>Fecha</th><th>Empresa</th><th>Industria / actividad</th><th>Índice</th><th>Nivel</th><th>Cursos</th><th></th></tr></thead>
+      <thead><tr><th>Fecha</th><th>Empresa</th><th>Industria / actividad</th><th>Índice</th><th>Nivel</th><th>Estado</th><th></th></tr></thead>
       <tbody>
         ${lista.map((reg) => {
           const r = reg.respuestas;
           const ind = industriaPorId(r.industria);
           const act = actividadPorId(ind, r.actividad);
           const nv = NIVELES[reg.resultado.nivel];
+          const est = estadoDe(reg);
           return `<tr>
             <td>${fecha(reg.creado, true)}<small>${reg.modo === 'consultor' ? 'Con consultor' : 'Autoguiada'}</small></td>
             <td><strong>${esc(r.contacto.empresa)}</strong><small>${esc([r.contacto.nombre, r.contacto.ciudad].filter(Boolean).join(' · '))}</small></td>
             <td>${ind ? `${ind.icono} ${esc(ind.nombre)}` : ''}<small>${esc(act?.nombre || '')}</small></td>
             <td class="num">${reg.resultado.indice}</td>
             <td><span class="nivel nivel-${nv.id}" data-icono="${nv.icono}">${nv.nombre.replace('Riesgo ', '')}</span></td>
-            <td>${reg.interes?.length || '–'}</td>
-            <td><div class="acc"><a class="btn btn-borde btn-sm" href="#/resultado/${reg.id}">Ver</a><button class="btn btn-peligro" data-borrar="${reg.id}" aria-label="Eliminar la encuesta de ${esc(r.contacto.empresa)}">✕</button></div></td>
+            <td><span class="estado estado-${est.v}">${est.t}</span></td>
+            <td><div class="acc"><a class="btn btn-borde btn-sm" href="#/panel/${reg.id}">Ficha</a><button class="btn btn-peligro" data-borrar="${reg.id}" aria-label="Eliminar la encuesta de ${esc(r.contacto.empresa)}">✕</button></div></td>
           </tr>`;
         }).join('')}
       </tbody>
@@ -249,7 +398,7 @@ function pintarTabla(cont, lista) {
 
 function exportarCsv(lista) {
   const dims = Object.keys(DIMENSIONES);
-  const cab = ['fecha', 'modo', 'empresa', 'contacto', 'correo', 'telefono', 'ciudad', 'rol', 'tamano', 'industria', 'actividad', 'indice', 'nivel', ...dims.map((d) => `dim_${d}`), 'objetivos', 'cursos_interes'];
+  const cab = ['fecha', 'modo', 'empresa', 'contacto', 'correo', 'telefono', 'ciudad', 'rol', 'tamano', 'industria', 'actividad', 'indice', 'nivel', ...dims.map((d) => `dim_${d}`), 'objetivos', 'cursos_interes', 'estado', 'notas'];
   const celda = (v) => {
     let s = String(v ?? '');
     // Evita que Excel interprete el texto como fórmula.
@@ -262,9 +411,10 @@ function exportarCsv(lista) {
     return [
       reg.creado, reg.modo, r.contacto.empresa, r.contacto.nombre, r.contacto.correo, r.contacto.telefono, r.contacto.ciudad,
       r.rol, r.tamano, ind?.nombre, actividadPorId(ind, r.actividad)?.nombre, reg.resultado.indice, reg.resultado.nivel,
-      ...dims.map((d) => reg.resultado.dimensiones[d] ?? ''), (r.objetivos || []).join(' | '), (reg.interes || []).join(' | ')
+      ...dims.map((d) => reg.resultado.dimensiones[d] ?? ''), (r.objetivos || []).join(' | '), (reg.interes || []).join(' | '),
+      estadoDe(reg).t, reg.seguimiento?.notas || ''
     ].map(celda).join(',');
   });
-  const contenido = '\ufeff' + [cab.join(','), ...filas].join('\n');
+  const contenido = '﻿' + [cab.join(','), ...filas].join('\n');
   return descargarArchivo(`encuestas-${new Date().toISOString().slice(0, 10)}.csv`, contenido, 'text/csv;charset=utf-8');
 }

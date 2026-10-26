@@ -24,6 +24,7 @@ const servidor = {
   interes: (id, cursos) => api(`/api/encuestas/${encodeURIComponent(id)}/interes`, { method: 'POST', body: { cursos } }),
   listar: () => api('/api/panel/encuestas', { headers: { 'x-panel-clave': sesion.leer(CLAVE_PANEL) || '' } }),
   eliminar: (id) => api(`/api/panel/encuestas/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { 'x-panel-clave': sesion.leer(CLAVE_PANEL) || '' } }),
+  seguimiento: (id, cambios) => api(`/api/panel/encuestas/${encodeURIComponent(id)}/seguimiento`, { method: 'PATCH', body: cambios, headers: { 'x-panel-clave': sesion.leer(CLAVE_PANEL) || '' } }),
   verificarClave: () => api('/api/panel/verificar', { headers: { 'x-panel-clave': sesion.leer(CLAVE_PANEL) || '' } }),
   puedeAdministrar: async () => true,
   origen: async () => 'servidor'
@@ -118,6 +119,16 @@ const artifact = {
     }
     return null;
   },
+  async seguimiento(id, cambios) {
+    const seguimiento = limpiarSeguimiento(cambios);
+    const db = await obtenerDb();
+    if (db) {
+      try { await db.collection(COLECCION).doc(id).update({ seguimiento }); } catch (e) { throw errorDb(e); }
+    } else {
+      navegador.escribir(navegador.leer().map((r) => (r.id === id ? { ...r, seguimiento } : r)));
+    }
+    return { seguimiento };
+  },
   verificarClave: async () => ({ ok: true }),
   // Solo quien puede editar el artifact (el dueño) ve el panel.
   async puedeAdministrar() {
@@ -130,6 +141,23 @@ const artifact = {
   }
 };
 
+// Estado comercial del cliente en el panel del consultor.
+export const ESTADOS = [
+  { v: 'nuevo', t: 'Nuevo' },
+  { v: 'contactado', t: 'Contactado' },
+  { v: 'propuesta', t: 'Propuesta enviada' },
+  { v: 'cliente', t: 'Cliente' },
+  { v: 'descartado', t: 'Descartado' }
+];
+
+export function limpiarSeguimiento(c = {}) {
+  return {
+    estado: ESTADOS.some((e) => e.v === c.estado) ? c.estado : 'nuevo',
+    notas: typeof c.notas === 'string' ? c.notas.slice(0, 4000) : '',
+    actualizado: new Date().toISOString()
+  };
+}
+
 const datos = enArtifact ? artifact : servidor;
 
 export const guardarEncuesta = (respuestas, modo) => datos.guardar(respuestas, modo);
@@ -137,6 +165,7 @@ export const obtenerEncuesta = (id) => datos.obtener(id);
 export const registrarInteres = (id, cursos) => datos.interes(id, cursos);
 export const listarEncuestas = () => datos.listar();
 export const eliminarEncuesta = (id) => datos.eliminar(id);
+export const guardarSeguimiento = (id, cambios) => datos.seguimiento(id, cambios);
 export const verificarClavePanel = () => datos.verificarClave();
 export const panelConClave = datos.panelConClave;
 export const puedeAdministrar = () => datos.puedeAdministrar();

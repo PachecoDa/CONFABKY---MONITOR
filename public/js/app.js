@@ -5,6 +5,7 @@ import { vistaInicio } from './vistas/inicio.js';
 import { vistaEncuesta } from './vistas/encuesta.js';
 import { vistaResultado } from './vistas/resultado.js';
 import { vistaPanel } from './vistas/panel.js';
+import { vistaFicha } from './vistas/ficha.js';
 
 const app = document.getElementById('app');
 document.getElementById('marca-org').textContent = CONFIG.organizacion;
@@ -13,7 +14,8 @@ document.getElementById('pie-org').textContent = `${CONFIG.organizacion} · ${CO
 const rutas = [
   { patron: /^#\/encuesta(?:\?(.*))?$/, vista: vistaEncuesta, nombre: 'encuesta' },
   { patron: /^#\/resultado\/([\w-]+)$/, vista: vistaResultado, nombre: 'resultado' },
-  { patron: /^#\/panel$/, vista: vistaPanel, nombre: 'panel' }
+  { patron: /^#\/panel$/, vista: vistaPanel, nombre: 'panel' },
+  { patron: /^#\/panel\/([\w-]+)$/, vista: vistaFicha, nombre: 'panel' }
 ];
 
 async function navegar() {

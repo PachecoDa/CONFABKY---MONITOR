@@ -7,17 +7,17 @@ import { DIMENSIONES, construirFlujo, industriaPorId, actividadPorId } from './c
 
 export const NIVELES = {
   bajo: {
-    id: 'bajo', nombre: 'Riesgo bajo', etiqueta: 'Lista para escalar con IA', icono: '▲',
+    id: 'bajo', nombre: 'Riesgo bajo', etiquetaCorta: 'Bajo', etiqueta: 'Lista para escalar con IA', icono: '▲',
     resumen: 'Ya cuenta con datos organizados y confiables. El siguiente paso es convertirlos en predicciones y automatización: modelos de pronóstico, segmentación e inteligencia artificial aplicada.',
     enfoque: 'Modelos predictivos e IA aplicada'
   },
   moderado: {
-    id: 'moderado', nombre: 'Riesgo moderado', etiqueta: 'En transición analítica', icono: '◆',
+    id: 'moderado', nombre: 'Riesgo moderado', etiquetaCorta: 'Moderado', etiqueta: 'En transición analítica', icono: '◆',
     resumen: 'Tiene datos, pero dispersos, manuales o con calidad irregular. La prioridad es integrarlos, automatizar reportes y llevar los indicadores a tableros que se usen para decidir.',
     enfoque: 'Integración, tableros e indicadores'
   },
   alto: {
-    id: 'alto', nombre: 'Riesgo alto', etiqueta: 'Sin bases de datos para decidir', icono: '●',
+    id: 'alto', nombre: 'Riesgo alto', etiquetaCorta: 'Alto', etiqueta: 'Sin bases de datos para decidir', icono: '●',
     resumen: 'La información del negocio no está construida como base de datos. Antes de pensar en IA hay que digitalizar, estructurar y asegurar los datos: sin esa base, cualquier inversión en tecnología se pierde.',
     enfoque: 'Fundamentos y construcción de la base de datos'
   }

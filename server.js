@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { Almacen } from './lib/almacen.js';
 import { evaluar, validarRespuestas } from './public/js/motor/evaluacion.js';
 import { CURSOS } from './public/js/motor/cursos.js';
+import { limpiarSeguimiento } from './public/js/datos.js';
 
 const raiz = path.dirname(fileURLToPath(import.meta.url));
 const PUERTO = Number(process.env.PORT) || 3000;
@@ -83,6 +84,14 @@ app.get('/api/panel/verificar', soloPanel, (req, res) => res.json({ ok: true }))
 app.get('/api/panel/encuestas', soloPanel, (req, res) => {
   const lista = [...almacen.listar()].sort((a, b) => b.creado.localeCompare(a.creado));
   res.json(lista);
+});
+
+// Estado comercial y notas del consultor sobre un cliente.
+app.patch('/api/panel/encuestas/:id/seguimiento', soloPanel, async (req, res) => {
+  const seguimiento = limpiarSeguimiento(req.body);
+  const r = await almacen.actualizar(req.params.id, { seguimiento });
+  if (!r) return res.status(404).json({ error: 'Diagnóstico no encontrado.' });
+  res.json({ seguimiento });
 });
 
 app.delete('/api/panel/encuestas/:id', soloPanel, async (req, res) => {
